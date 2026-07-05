@@ -1,26 +1,37 @@
 import Foundation
 import Combine
 
-/// Observable clipboard history with debounced persistence to
-/// ~/Library/Application Support/CopyWiz/history.plist (binary plist).
+/// Observable clipboard history plus five persistent "hot slots", saved to
+/// ~/Library/Application Support/CopyWiz/ as binary plists.
 final class HistoryStore: ObservableObject {
 
+    static let slotCount = 5
+
     @Published private(set) var items: [ClipboardItem] = []
+
+    /// Five saved items, always one click (or ⌃⌘1–5) away from pasting.
+    /// Slots hold independent copies — deleting or clearing history never
+    /// touches them.
+    @Published private(set) var slots: [ClipboardItem?] = Array(repeating: nil, count: HistoryStore.slotCount)
 
     let maxUnpinnedItems = 300
 
     private var saveWork: DispatchWorkItem?
 
-    private let saveURL: URL = {
+    private static let directory: URL = {
         let dir = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("CopyWiz", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("history.plist")
+        return dir
     }()
+
+    private let saveURL = HistoryStore.directory.appendingPathComponent("history.plist")
+    private let slotsURL = HistoryStore.directory.appendingPathComponent("slots.plist")
 
     init() {
         load()
+        loadSlots()
     }
 
     // MARK: - Mutations
@@ -61,6 +72,14 @@ final class HistoryStore: ObservableObject {
         scheduleSave()
     }
 
+    // MARK: - Hot slots
+
+    func setSlot(_ index: Int, to item: ClipboardItem?) {
+        guard slots.indices.contains(index) else { return }
+        slots[index] = item
+        saveSlotsAsync()
+    }
+
     private func trim() {
         var unpinnedSeen = 0
         items = items.filter { item in
@@ -86,17 +105,49 @@ final class HistoryStore: ObservableObject {
     func saveNow() {
         saveWork?.cancel()
         Self.write(items, to: saveURL)
+        Self.write(storedSlots, to: slotsURL)
     }
 
-    private static func write(_ items: [ClipboardItem], to url: URL) {
+    private static func write<T: Encodable>(_ value: T, to url: URL) {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        guard let data = try? encoder.encode(items) else { return }
+        guard let data = try? encoder.encode(value) else { return }
         try? data.write(to: url, options: .atomic)
     }
 
     private func load() {
         guard let data = try? Data(contentsOf: saveURL) else { return }
         items = (try? PropertyListDecoder().decode([ClipboardItem].self, from: data)) ?? []
+    }
+
+    // MARK: - Slot persistence
+
+    /// Plists can't represent nil array elements, so occupied slots are
+    /// stored as (index, item) pairs.
+    private struct StoredSlot: Codable {
+        let index: Int
+        let item: ClipboardItem
+    }
+
+    private var storedSlots: [StoredSlot] {
+        slots.enumerated().compactMap { index, item in
+            item.map { StoredSlot(index: index, item: $0) }
+        }
+    }
+
+    private func saveSlotsAsync() {
+        let snapshot = storedSlots
+        let url = slotsURL
+        DispatchQueue.global(qos: .utility).async {
+            Self.write(snapshot, to: url)
+        }
+    }
+
+    private func loadSlots() {
+        guard let data = try? Data(contentsOf: slotsURL),
+              let stored = try? PropertyListDecoder().decode([StoredSlot].self, from: data) else { return }
+        for entry in stored where slots.indices.contains(entry.index) {
+            slots[entry.index] = entry.item
+        }
     }
 }

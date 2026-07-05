@@ -42,6 +42,7 @@ struct PanelRootView: View {
             VStack(spacing: 0) {
                 header
                 searchBar
+                hotSlotStrip
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 list
                 if let inspecting {
@@ -68,11 +69,54 @@ struct PanelRootView: View {
         .onChange(of: searchText) { _, _ in
             selectedID = flatList.first?.id
         }
+        .onReceive(NotificationCenter.default.publisher(for: .copyWizToast)) { note in
+            if let text = note.object as? String { showToast(text) }
+        }
         .onChange(of: store.items) { _, newItems in
-            if let inspecting, !newItems.contains(where: { $0.id == inspecting.id }) {
+            if let inspecting,
+               !newItems.contains(where: { $0.id == inspecting.id }),
+               !store.slots.contains(where: { $0?.id == inspecting.id }) {
                 self.inspecting = nil
             }
         }
+    }
+
+    // MARK: - Hot slots
+
+    private var hotSlotStrip: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<HistoryStore.slotCount, id: \.self) { index in
+                HotSlotTile(
+                    index: index,
+                    item: store.slots[index],
+                    onActivate: { pasteNow in
+                        if let item = store.slots[index] { arm(item, paste: pasteNow) }
+                    },
+                    onSaveLatest: {
+                        if let latest = store.items.first {
+                            store.setSlot(index, to: latest)
+                            showToast("SAVED TO SLOT \(index + 1)")
+                        } else {
+                            showToast("NOTHING TO SAVE YET")
+                        }
+                    },
+                    onInspect: {
+                        if let item = store.slots[index] {
+                            withAnimation(.easeOut(duration: 0.15)) { inspecting = item }
+                        }
+                    },
+                    onClear: {
+                        if let cleared = store.slots[index], inspecting?.id == cleared.id {
+                            inspecting = nil
+                        }
+                        store.setSlot(index, to: nil)
+                        showToast("SLOT \(index + 1) CLEARED")
+                    }
+                )
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
     }
 
     // MARK: - Header
@@ -244,6 +288,10 @@ struct PanelRootView: View {
                 onDelete: {
                     if inspecting?.id == item.id { inspecting = nil }
                     store.delete(item)
+                },
+                onSaveToSlot: { slotIndex in
+                    store.setSlot(slotIndex, to: item)
+                    showToast("SAVED TO SLOT \(slotIndex + 1)")
                 }
             )
             .id(item.id)
@@ -294,7 +342,7 @@ struct PanelRootView: View {
             Text(monitor.isPaused ? "PAUSED" : "CAPTURING")
                 .foregroundStyle(monitor.isPaused ? Theme.amber : Theme.mint.opacity(0.8))
             Spacer()
-            Text("⌃⌘V TOGGLE · ⌘-CLICK PASTES")
+            Text("⌃⌘V · ⌃⌘1–5 SLOTS · ⌘-CLICK PASTES")
         }
         .font(Theme.monoSmall)
         .tracking(1)

@@ -18,6 +18,8 @@ final class PanelHostingView<Content: View>: NSHostingView<Content> {
 
 extension Notification.Name {
     static let copyWizPanelDidShow = Notification.Name("org.copywiz.panelDidShow")
+    /// Posted with a String object to flash a toast in the panel.
+    static let copyWizToast = Notification.Name("org.copywiz.toast")
 }
 
 final class PanelController {

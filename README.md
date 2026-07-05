@@ -10,6 +10,9 @@ past item and your very next **⌘V** pastes it, byte-for-byte identical to the 
 ┌──────────────────────────────────┐
 │ ● COPYWIZ · LIVE          ⏸ ⋯   │
 │ [ 🔍 search history…          ]  │
+│ ┌────┐┌────┐┌────┐┌────┐┌────┐  │
+│ │¹ ≡ ││² 🖼 ││³ ⟨⟩││ 4  ││ 5  │  │
+│ └────┘└────┘└────┘└────┘└────┘  │
 │ ──────────────────────────────── │
 │ PINNED ────────────────────────  │
 │ 📌 meeting notes template        │
@@ -34,6 +37,11 @@ past item and your very next **⌘V** pastes it, byte-for-byte identical to the 
   of them, so pasting back into the source app works exactly like the original copy.
 - **Click → ⌘V** — click an item and it's "on deck": your next ⌘V pastes it.
   **⌘-click** (or ⌘-Return) pastes it immediately into the frontmost app.
+- **5 Hot Slots** — a strip of always-ready sockets at the top of the panel. Save
+  anything to a slot (right-click a history item, or click an empty slot to capture
+  your latest copy) and it stays there until you replace it — surviving restarts and
+  history clears. Click a slot to arm it, ⌘-click to paste it, or hit **⌃⌘1–⌃⌘5
+  from any app** to fire a slot without even opening the panel.
 - **Payload Inspector** — the "behind the hood" view. See every type identifier on an
   item, decoded as text, XML-ified binary plist, or image where possible — hex + ASCII
   dump otherwise. Export any representation as a raw `.bin` file.
@@ -50,6 +58,8 @@ past item and your very next **⌘V** pastes it, byte-for-byte identical to the 
 | Toggle panel | **⌃⌘V** (global) or menu bar wand |
 | Arm an item for pasting | click it, then ⌘V wherever you are |
 | Paste immediately | **⌘-click** an item *(needs Accessibility)* |
+| Fire hot slot 1–5 from anywhere | **⌃⌘1 … ⌃⌘5** (global; auto-pastes with Accessibility, otherwise arms for ⌘V) |
+| Save to a hot slot | right-click item → *Save to Hot Slot*, or click an empty slot to grab the latest copy |
 | Navigate / arm from keyboard | type in search, **↑ ↓** then **Return** (⌘Return pastes) |
 | Hide panel | **Esc** |
 | Plain-text copy, pin, inspect, delete | right-click an item |
@@ -96,8 +106,8 @@ payloads just get the amber treatment so you know something interesting is insid
 
 ## Storage
 
-History (up to 300 unpinned items, plus all pins) persists across launches at
-`~/Library/Application Support/CopyWiz/history.plist`. Individual representations
+History (up to 300 unpinned items, plus all pins) and hot slots persist across
+launches in `~/Library/Application Support/CopyWiz/`. Individual representations
 larger than 8 MB are skipped to keep the app light. Everything stays on your Mac —
 CopyWiz has no network code at all.
 

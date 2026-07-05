@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-private enum ThumbCache {
+enum ThumbCache {
     static let cache = NSCache<NSUUID, NSImage>()
 
     static func image(for item: ClipboardItem) -> NSImage? {
@@ -21,6 +21,7 @@ struct HistoryRow: View {
     var onInspect: () -> Void
     var onPin: () -> Void
     var onDelete: () -> Void
+    var onSaveToSlot: (_ slotIndex: Int) -> Void
 
     @State private var hovering = false
 
@@ -152,6 +153,11 @@ struct HistoryRow: View {
             Button("Copy as Plain Text") { onArmPlain() }
         }
         Divider()
+        Menu("Save to Hot Slot") {
+            ForEach(0..<HistoryStore.slotCount, id: \.self) { slotIndex in
+                Button("Slot \(slotIndex + 1)  (⌃⌘\(slotIndex + 1))") { onSaveToSlot(slotIndex) }
+            }
+        }
         Button(item.isPinned ? "Unpin" : "Pin") { onPin() }
         Button("Inspect Payload") { onInspect() }
         Divider()
