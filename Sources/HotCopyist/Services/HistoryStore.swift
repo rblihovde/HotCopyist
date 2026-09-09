@@ -74,10 +74,17 @@ final class HistoryStore: ObservableObject {
             attributes: [.posixPermissions: 0o700]
         )
         // Existing installs were created with the default mode, so tighten it
-        // on every launch rather than only at creation.
+        // on every launch rather than only at creation — along with any files
+        // already written, which otherwise keep 0644 until they next change.
         try? FileManager.default.setAttributes(
             [.posixPermissions: 0o700], ofItemAtPath: dir.path
         )
+        for name in ["history.plist", "slots.plist", "slotsets.plist"] {
+            let file = dir.appendingPathComponent(name)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: file.path
+            )
+        }
         migrateLegacyData(from: support.appendingPathComponent("CopyWiz", isDirectory: true), to: dir)
         return dir
     }()
