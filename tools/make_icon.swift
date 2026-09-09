@@ -1,113 +1,170 @@
 import AppKit
+import Foundation
 
-// Renders HotCopy's app icon (1024×1024 PNG) with CoreGraphics/AppKit:
-// a near-black squircle with a phosphor-mint clipboard + eighth note and a
-// small amber "live" dot — the app's retro-future palette.
-// Usage: swift make_icon.swift <output.png>
+// Renders the app icon — a plain clipboard, drawn as an object rather than a
+// glyph — and packs it into an .icns at every size macOS asks for.
+//
+// Usage: swift make_icon.swift <output.icns>
+//
+// Each size is rendered natively from the vector description rather than
+// downscaled from one master, so the small sizes stay crisp. Below 48pt the
+// ruled lines are dropped: at that scale they are sub-pixel and turn the paper
+// into grey mush instead of reading as text.
 
-let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon_1024.png"
+let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.icns"
 let S: CGFloat = 1024
 
-let mint  = NSColor(srgbRed: 0.36, green: 0.91, blue: 0.68, alpha: 1)
-let amber = NSColor(srgbRed: 1.00, green: 0.66, blue: 0.24, alpha: 1)
-let bgTop = NSColor(srgbRed: 0.09, green: 0.13, blue: 0.11, alpha: 1)
-let bgBot = NSColor(srgbRed: 0.03, green: 0.05, blue: 0.04, alpha: 1)
+// MARK: - Palette
 
-let rep = NSBitmapImageRep(
-    bitmapDataPlanes: nil, pixelsWide: Int(S), pixelsHigh: Int(S),
-    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+func hex(_ value: UInt32) -> NSColor {
+    NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+}
 
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-let ctx = NSGraphicsContext.current!.cgContext
+let bgTop     = hex(0xF6F7F8)
+let bgBottom  = hex(0xE3E6E9)
+let board     = hex(0x55606B)
+let boardEdge = hex(0x3D4650)
+let paper     = hex(0xFDFDFD)
+let rule      = hex(0xC7CDD3)
+let clip      = hex(0x99A1A9)
+let clipShade = hex(0x737B83)
+let dropShadow = NSColor(srgbRed: 0.13, green: 0.17, blue: 0.21, alpha: 0.30)
 
-// --- squircle background with vertical gradient ---
-let inset: CGFloat = 88
-let side = S - inset * 2
-let squircle = NSBezierPath(roundedRect: NSRect(x: inset, y: inset, width: side, height: side),
-                            xRadius: 196, yRadius: 196)
-NSGraphicsContext.saveGraphicsState()
-squircle.addClip()
-NSGradient(starting: bgTop, ending: bgBot)!.draw(in: NSRect(x: 0, y: 0, width: S, height: S), angle: -90)
-NSGraphicsContext.restoreGraphicsState()
+// MARK: - Geometry
 
-// hairline mint rim
-mint.withAlphaComponent(0.30).setStroke()
-squircle.lineWidth = 5
-squircle.stroke()
+/// The macOS icon shape: a continuous-curvature superellipse. A plain
+/// `roundedRect` has circular corners and sits subtly wrong beside other
+/// Dock icons.
+func squircle(in rect: NSRect, n: CGFloat = 5.0, samples: Int = 720) -> NSBezierPath {
+    let a = rect.width / 2, b = rect.height / 2
+    let cx = rect.midX, cy = rect.midY
+    let path = NSBezierPath()
+    for i in 0...samples {
+        let t = CGFloat(i) / CGFloat(samples) * 2 * .pi
+        let ct = cos(t), st = sin(t)
+        let x = cx + a * copysign(pow(abs(ct), 2 / n), ct)
+        let y = cy + b * copysign(pow(abs(st), 2 / n), st)
+        if i == 0 { path.move(to: NSPoint(x: x, y: y)) } else { path.line(to: NSPoint(x: x, y: y)) }
+    }
+    path.close()
+    return path
+}
 
-func roundedRect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ r: CGFloat) -> NSBezierPath {
+func rr(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ r: CGFloat) -> NSBezierPath {
     NSBezierPath(roundedRect: NSRect(x: x, y: y, width: w, height: h), xRadius: r, yRadius: r)
 }
 
-// --- clipboard board ---
-let boardW: CGFloat = 430, boardH: CGFloat = 520
-let boardX = (S - boardW) / 2
-let boardY: CGFloat = 250
-NSColor(srgbRed: 0.05, green: 0.08, blue: 0.07, alpha: 1).setFill()
-let board = roundedRect(boardX, boardY, boardW, boardH, 54)
-board.fill()
-mint.setStroke()
-board.lineWidth = 18
-board.stroke()
-
-// clip at the top of the board
-let clipW: CGFloat = 180, clipH: CGFloat = 92
-let clip = roundedRect((S - clipW) / 2, boardY + boardH - 52, clipW, clipH, 30)
-mint.setFill()
-clip.fill()
-
-// --- eighth note, with a soft phosphor glow ---
-func drawNote(scale: CGFloat, color: NSColor) {
+func shadowed(color: NSColor, blur: CGFloat, dy: CGFloat, _ body: () -> Void) {
     NSGraphicsContext.saveGraphicsState()
-    let cx: CGFloat = 470, cy: CGFloat = 430
-    let t = NSAffineTransform()
-    t.translateX(by: cx, yBy: cy)
-    t.scale(by: scale)
-    t.translateX(by: -cx, yBy: -cy)
-    t.concat()
-
-    color.setFill()
-    color.setStroke()
-
-    // notehead (rotated ellipse)
-    NSGraphicsContext.saveGraphicsState()
-    let ht = NSAffineTransform()
-    ht.translateX(by: cx, yBy: cy)
-    ht.rotate(byDegrees: -22)
-    ht.translateX(by: -cx, yBy: -cy)
-    ht.concat()
-    NSBezierPath(ovalIn: NSRect(x: cx - 95, y: cy - 70, width: 170, height: 128)).fill()
-    NSGraphicsContext.restoreGraphicsState()
-
-    // stem
-    roundedRect(cx + 52, cy + 10, 26, 300, 13).fill()
-
-    // flag
-    let flag = NSBezierPath()
-    flag.move(to: NSPoint(x: cx + 78, y: cy + 300))
-    flag.curve(to: NSPoint(x: cx + 150, y: cy + 150),
-               controlPoint1: NSPoint(x: cx + 150, y: cy + 300),
-               controlPoint2: NSPoint(x: cx + 168, y: cy + 210))
-    flag.curve(to: NSPoint(x: cx + 78, y: cy + 210),
-               controlPoint1: NSPoint(x: cx + 140, y: cy + 205),
-               controlPoint2: NSPoint(x: cx + 110, y: cy + 208))
-    flag.close()
-    flag.fill()
+    let shadow = NSShadow()
+    shadow.shadowColor = color
+    shadow.shadowBlurRadius = blur
+    shadow.shadowOffset = NSSize(width: 0, height: dy)
+    shadow.set()
+    body()
     NSGraphicsContext.restoreGraphicsState()
 }
-for (scale, alpha) in [(1.22, 0.10), (1.12, 0.16)] {
-    drawNote(scale: scale, color: mint.withAlphaComponent(alpha))
+
+// MARK: - The icon
+
+/// Apple's macOS grid: an 824pt body centred in a 1024pt canvas.
+let bodyRect = NSRect(x: 100, y: 100, width: 824, height: 824)
+
+func drawIcon(showRules: Bool) {
+    // Background: a plain surface with the faintest top-down shading.
+    let shape = squircle(in: bodyRect)
+    NSGraphicsContext.saveGraphicsState()
+    shape.addClip()
+    NSGradient(starting: bgTop, ending: bgBottom)!
+        .draw(in: NSRect(x: 0, y: 0, width: S, height: S), angle: -90)
+    NSGraphicsContext.restoreGraphicsState()
+
+    // Board: the hardboard backing. Modest corner radius — a board, not a card.
+    shadowed(color: dropShadow, blur: 34, dy: -12) {
+        board.setFill()
+        rr(296, 176, 432, 596, 34).fill()
+    }
+    boardEdge.setStroke()
+    let boardPath = rr(296, 176, 432, 596, 34)
+    boardPath.lineWidth = 6
+    boardPath.stroke()
+
+    // Paper: inset so the board frames it on all four sides.
+    shadowed(color: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.22), blur: 14, dy: -5) {
+        paper.setFill()
+        rr(340, 212, 344, 500, 10).fill()
+    }
+
+    if showRules {
+        rule.setFill()
+        for (offset, width) in [(CGFloat(372), CGFloat(252)), (280, 216), (188, 168)] {
+            rr(386, 212 + offset, width, 26, 13).fill()
+        }
+    }
+
+    // Clip: a base plate straddling the board's top edge, plus a smaller handle
+    // above it. Two pieces is what makes it read as a clip rather than a tab.
+    shadowed(color: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.28), blur: 16, dy: -6) {
+        clip.setFill()
+        rr(512 - 104, 726, 208, 78, 22).fill()
+    }
+    clipShade.setFill()
+    rr(512 - 62, 792, 124, 66, 26).fill()
+    clip.setFill()
+    rr(512 - 54, 796, 108, 54, 22).fill()
 }
-drawNote(scale: 1.0, color: mint)
 
-// --- amber "live" dot, echoing the panel's status indicator ---
-amber.setFill()
-NSBezierPath(ovalIn: NSRect(x: boardX + boardW - 92, y: boardY + 44, width: 46, height: 46)).fill()
+func renderIcon(size: CGFloat) -> NSBitmapImageRep {
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size),
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSGraphicsContext.current?.imageInterpolation = .high
+    let transform = NSAffineTransform()
+    transform.scale(by: size / S)
+    transform.concat()
+    drawIcon(showRules: size >= 48)
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
 
-NSGraphicsContext.restoreGraphicsState()
+// MARK: - Pack into an .icns
 
-let data = rep.representation(using: .png, properties: [:])!
-try! data.write(to: URL(fileURLWithPath: outPath))
+let iconsetURL = URL(fileURLWithPath: outPath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("AppIcon.iconset", isDirectory: true)
+
+try? FileManager.default.removeItem(at: iconsetURL)
+try! FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
+
+let variants: [(name: String, pixels: CGFloat)] = [
+    ("icon_16x16", 16), ("icon_16x16@2x", 32),
+    ("icon_32x32", 32), ("icon_32x32@2x", 64),
+    ("icon_128x128", 128), ("icon_128x128@2x", 256),
+    ("icon_256x256", 256), ("icon_256x256@2x", 512),
+    ("icon_512x512", 512), ("icon_512x512@2x", 1024)
+]
+
+for variant in variants {
+    let rep = renderIcon(size: variant.pixels)
+    let data = rep.representation(using: .png, properties: [:])!
+    try! data.write(to: iconsetURL.appendingPathComponent("\(variant.name).png"))
+}
+
+let iconutil = Process()
+iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+iconutil.arguments = ["-c", "icns", iconsetURL.path, "-o", outPath]
+try! iconutil.run()
+iconutil.waitUntilExit()
+
+guard iconutil.terminationStatus == 0 else {
+    FileHandle.standardError.write(Data("iconutil failed\n".utf8))
+    exit(1)
+}
+
+try? FileManager.default.removeItem(at: iconsetURL)
 print("wrote \(outPath)")
