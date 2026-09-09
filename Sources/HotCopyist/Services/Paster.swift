@@ -19,7 +19,15 @@ enum Paster {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    static func sendCmdV() {
+    /// Synthesizes ⌘V. `ifFrontmostIs` guards the short delay callers leave for
+    /// the pasteboard to settle: if the user has switched apps in the meantime,
+    /// the keystroke is dropped rather than delivered somewhere unintended.
+    static func sendCmdV(ifFrontmostIs expectedPID: pid_t? = nil) {
+        if let expectedPID,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier != expectedPID {
+            return
+        }
+
         let source = CGEventSource(stateID: .combinedSessionState)
         let vKeyCode: CGKeyCode = 9
 

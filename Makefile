@@ -1,6 +1,6 @@
 APP     := dist/HotCopyist.app
 BINARY  := .build/release/HotCopyist
-VERSION := 1.0.0
+VERSION := 2.0.0
 DMG     := dist/HotCopyist-$(VERSION).dmg
 
 # Sign with the Developer ID cert when present so the Accessibility grant

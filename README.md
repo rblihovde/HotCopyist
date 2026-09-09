@@ -42,6 +42,16 @@ past item and your very next **⌘V** pastes it, byte-for-byte identical to the 
   your latest copy) and it stays there until you replace it — surviving restarts and
   history clears. Click a slot to arm it, ⌘-click to paste it, or hit **⌃⌘1–⌃⌘5
   from any app** to fire a slot without even opening the panel.
+- **Screen OCR** 👀 — hit **⌃⌘X** (or click the dashed-lasso button in the panel),
+  drag a box over anything on screen, and the words inside it land on the clipboard
+  and in your history. Built for text you can't select: a PDF, a video still, a scan,
+  an app that won't let you highlight — or a remote-desktop session, where the client's
+  screen is just pixels to your Mac. Recognition is Vision's, entirely on-device.
+- **Editable shortcuts** — every global key is remappable (menu bar → *Keyboard
+  Shortcuts…*). Remote-desktop clients swallow a lot of combinations and which ones
+  varies by client, so nothing is hardcoded.
+- **Auto-delete history** — optionally drop unpinned clips after 1 hour, 8 hours,
+  24 hours or 7 days. Off by default; pinned items and hot slots are never touched.
 - **Payload Inspector** — the "behind the hood" view. See every type identifier on an
   item, decoded as text, XML-ified binary plist, or image where possible — hex + ASCII
   dump otherwise. Export any representation as a raw `.bin` file.
@@ -56,6 +66,7 @@ past item and your very next **⌘V** pastes it, byte-for-byte identical to the 
 | Action | Gesture |
 | --- | --- |
 | Toggle panel | **⌃⌘V** (global) or menu bar wand |
+| Grab text from screen (OCR) | **⌃⌘X** (global), or the dashed-lasso button in the panel |
 | Arm an item for pasting | click it, then ⌘V wherever you are |
 | Paste immediately | **⌘-click** an item *(needs Accessibility)* |
 | Fire hot slot 1–5 from anywhere | **⌃⌘1 … ⌃⌘5** (global; auto-pastes with Accessibility, otherwise arms for ⌘V) |
@@ -63,6 +74,10 @@ past item and your very next **⌘V** pastes it, byte-for-byte identical to the 
 | Navigate / arm from keyboard | type in search, **↑ ↓** then **Return** (⌘Return pastes) |
 | Hide panel | **Esc** |
 | Plain-text copy, pin, inspect, delete | right-click an item |
+| Cancel a screen grab | **Esc**, right-click, or a plain click |
+
+Every shortcut above is a default, not a fixture — remap any of them in the menu
+bar under *Keyboard Shortcuts…*.
 
 ## Building
 
@@ -82,6 +97,10 @@ the binary's path — use the installed .app for daily use.
 - **Accessibility** (System Settings → Privacy & Security → Accessibility) is only
   needed for the optional *paste immediately* feature, which synthesizes a ⌘V keystroke.
   HotCopyist will prompt the first time you ⌘-click an item.
+- **Screen Recording** (System Settings → Privacy & Security → Screen & System Audio
+  Recording) is only needed for screen OCR. HotCopyist prompts the first time you start
+  a grab. The screen is read only while you're dragging a selection, and the text is
+  recognized on this Mac — nothing is sent anywhere.
 
 ## Peeking behind the hood (the Finale experiment)
 
@@ -107,9 +126,15 @@ payloads just get the amber treatment so you know something interesting is insid
 ## Storage
 
 History (up to 300 unpinned items, plus all pins) and hot slots persist across
-launches in `~/Library/Application Support/HotCopy/`. Individual representations
-larger than 8 MB are skipped to keep the app light. Everything stays on your Mac —
-HotCopyist has no network code at all.
+launches in `~/Library/Application Support/HotCopy/`, written owner-only (0600) in a
+0700 directory. Individual representations larger than 8 MB are skipped, and a single
+copy is capped at 32 MB across all its representations, to keep the app light.
+Everything stays on your Mac — HotCopyist has no network code at all.
+
+Clipboard history is as sensitive as whatever you last copied. If you work on other
+people's machines, turn on *Auto-Delete History* in the menu bar so the day's clips
+don't outlive the job. Note that HotCopyist deliberately captures **everything**,
+including what a password manager puts on the clipboard.
 
 ## License
 

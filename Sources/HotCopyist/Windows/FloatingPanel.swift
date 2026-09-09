@@ -51,7 +51,7 @@ final class PanelController: ObservableObject {
         }
     }
 
-    init(store: HistoryStore, monitor: ClipboardMonitor) {
+    init(store: HistoryStore, monitor: ClipboardMonitor, grabber: ScreenTextGrabber) {
         let defaults = UserDefaults.standard
         alwaysOnTop = defaults.object(forKey: Self.alwaysOnTopKey) as? Bool ?? true
         collapsed = defaults.bool(forKey: Self.collapsedKey)
@@ -87,6 +87,7 @@ final class PanelController: ObservableObject {
         let root = PanelRootView(controller: self)
             .environmentObject(store)
             .environmentObject(monitor)
+            .environmentObject(grabber)
         panel.contentView = PanelHostingView(rootView: AnyView(root))
 
         panel.setFrameAutosaveName(Self.frameAutosaveName)

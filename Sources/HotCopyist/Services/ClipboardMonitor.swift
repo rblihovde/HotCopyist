@@ -15,6 +15,11 @@ final class ClipboardMonitor: ObservableObject {
     /// e.g. multi-hundred-megabyte image copies).
     static let maxRepresentationBytes = 8 * 1024 * 1024
 
+    /// Ceiling for one captured item across all of its representations. The
+    /// per-representation cap alone isn't enough: a single copy can carry
+    /// dozens of types, and history is held in memory as well as on disk.
+    static let maxItemBytes = 32 * 1024 * 1024
+
     @Published var isPaused = false
 
     /// Handles arming of Finale music clips, which live in Finale's clip
@@ -74,8 +79,12 @@ final class ClipboardMonitor: ObservableObject {
         let pb = NSPasteboard.general
         // A newer copy supersedes this one; poll() will pick it up.
         guard pb.changeCount == changeCount else { return }
+        // Pausing part-way through a retry chain has to stop it too, or a clip
+        // the user meant to keep out of history still lands there.
+        guard !isPaused else { return }
 
         var reps: [ClipboardItem.Representation] = []
+        var totalBytes = 0
         if let pbItems = pb.pasteboardItems, !pbItems.isEmpty {
             // Skip our own re-copies.
             if pbItems.contains(where: { $0.types.contains(Self.markerType) }) { return }
@@ -84,6 +93,8 @@ final class ClipboardMonitor: ObservableObject {
                 for type in pbItem.types {
                     guard let data = pbItem.data(forType: type) else { continue }
                     guard data.count <= Self.maxRepresentationBytes else { continue }
+                    guard totalBytes + data.count <= Self.maxItemBytes else { continue }
+                    totalBytes += data.count
                     reps.append(.init(itemIndex: index, type: type.rawValue, data: data))
                 }
             }

@@ -3,7 +3,8 @@ import AppKit
 
 /// One of the five always-ready hot slots. Filled slots glow mint and arm on
 /// click (⌘-click pastes immediately); empty slots are dashed sockets that
-/// capture the latest copy when clicked. Global hotkey: ⌃⌘\(index+1).
+/// capture the latest copy when clicked. Each slot has its own global
+/// shortcut, editable in Keyboard Shortcuts.
 struct HotSlotTile: View {
     let index: Int
     let item: ClipboardItem?
@@ -17,6 +18,7 @@ struct HotSlotTile: View {
 
     @State private var hovering = false
     @State private var dropTargeted = false
+    @ObservedObject private var shortcuts = ShortcutStore.shared
 
     var body: some View {
         ZStack {
@@ -119,11 +121,19 @@ struct HotSlotTile: View {
         String(item.displayName.prefix(14))
     }
 
+    /// The slot's current global shortcut, whatever the user has bound it to.
+    private var shortcutText: String {
+        guard let action = ShortcutAction.allCases.first(where: { $0.slotIndex == index }) else {
+            return ""
+        }
+        return shortcuts[action].displayString
+    }
+
     private var helpText: String {
         if let item {
-            return "⌃⌘\(index + 1) — \(item.displayName)"
+            return "\(shortcutText) — \(item.displayName)"
         }
-        return "Empty slot — click to save your latest copy, or drag a clip here (⌃⌘\(index + 1))"
+        return "Empty slot — click to save your latest copy, or drag a clip here (\(shortcutText))"
     }
 
     @ViewBuilder

@@ -11,7 +11,8 @@ final class HistoryStore: ObservableObject {
 
     @Published private(set) var items: [ClipboardItem] = []
 
-    /// Five saved items, always one click (or ⌃⌘1–5) away from pasting.
+    /// Five saved items, always one click (or their global shortcut) away from
+    /// pasting.
     /// Slots hold independent copies — deleting or clearing history never
     /// touches them.
     @Published private(set) var slots: [ClipboardItem?] = Array(repeating: nil, count: HistoryStore.slotCount)
@@ -22,13 +23,61 @@ final class HistoryStore: ObservableObject {
 
     let maxUnpinnedItems = 300
 
+    /// How long unpinned clips are kept. Off by default so upgrading never
+    /// silently destroys an existing history; turn it on from the menu bar when
+    /// working on someone else's machine and you don't want the day's clips
+    /// outliving the job. Pinned items are always exempt.
+    @Published var retention: Retention {
+        didSet {
+            guard retention != oldValue else { return }
+            UserDefaults.standard.set(retention.rawValue, forKey: Self.retentionKey)
+            expireOldItems()
+        }
+    }
+
+    enum Retention: Int, CaseIterable, Identifiable {
+        case off = 0
+        case oneHour = 1
+        case eightHours = 8
+        case oneDay = 24
+        case oneWeek = 168
+
+        var id: Int { rawValue }
+
+        var title: String {
+            switch self {
+            case .off: return "Keep Until I Clear"
+            case .oneHour: return "Delete After 1 Hour"
+            case .eightHours: return "Delete After 8 Hours"
+            case .oneDay: return "Delete After 24 Hours"
+            case .oneWeek: return "Delete After 7 Days"
+            }
+        }
+
+        var interval: TimeInterval? {
+            self == .off ? nil : TimeInterval(rawValue) * 3600
+        }
+    }
+
+    private static let retentionKey = "com.blihovde.hotcopy.retentionHours"
+
     private var saveWork: DispatchWorkItem?
+    private var expiryTimer: Timer?
 
     private static let directory: URL = {
         let support = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = support.appendingPathComponent("HotCopy", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        // Existing installs were created with the default mode, so tighten it
+        // on every launch rather than only at creation.
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700], ofItemAtPath: dir.path
+        )
         migrateLegacyData(from: support.appendingPathComponent("CopyWiz", isDirectory: true), to: dir)
         return dir
     }()
@@ -52,9 +101,38 @@ final class HistoryStore: ObservableObject {
     private let slotSetsURL = HistoryStore.directory.appendingPathComponent("slotsets.plist")
 
     init() {
+        let stored = UserDefaults.standard.integer(forKey: Self.retentionKey)
+        retention = Retention(rawValue: stored) ?? .off
+
         load()
         loadSlots()
         loadSlotSets()
+
+        // Expire on launch, then every ten minutes — a long-running session
+        // shouldn't hold stale clips just because nothing was copied.
+        expireOldItems()
+        let timer = Timer(timeInterval: 600, repeats: true) { [weak self] _ in
+            self?.expireOldItems()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        expiryTimer = timer
+    }
+
+    deinit {
+        expiryTimer?.invalidate()
+    }
+
+    // MARK: - Expiry
+
+    /// Drops unpinned items older than the retention window. Pinned items and
+    /// hot slots are never touched — those are deliberate keeps.
+    func expireOldItems() {
+        guard let interval = retention.interval else { return }
+        let cutoff = Date().addingTimeInterval(-interval)
+        let before = items.count
+        items.removeAll { !$0.isPinned && $0.copiedAt < cutoff }
+        guard items.count != before else { return }
+        scheduleSave()
     }
 
     // MARK: - Mutations
@@ -70,6 +148,7 @@ final class HistoryStore: ObservableObject {
             items.insert(item, at: 0)
         }
         trim()
+        expireOldItems()
         scheduleSave()
     }
 
@@ -191,11 +270,18 @@ final class HistoryStore: ObservableObject {
         Self.write(slotSets, to: slotSetsURL)
     }
 
+    /// Clipboard history is as sensitive as anything the user has copied, so
+    /// the files are owner-only. `.atomic` writes via a temporary file, which
+    /// does not inherit the destination's mode — the permissions are therefore
+    /// re-applied after every write, not just at creation.
     private static func write<T: Encodable>(_ value: T, to url: URL) {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         guard let data = try? encoder.encode(value) else { return }
-        try? data.write(to: url, options: .atomic)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: url.path
+        )
     }
 
     private func load() {

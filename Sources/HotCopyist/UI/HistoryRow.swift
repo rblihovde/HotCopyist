@@ -26,6 +26,7 @@ struct HistoryRow: View {
     var onClearName: () -> Void
 
     @State private var hovering = false
+    @ObservedObject private var shortcuts = ShortcutStore.shared
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -153,6 +154,14 @@ struct HistoryRow: View {
         }
     }
 
+    /// The global shortcut currently bound to a hot slot.
+    private func slotShortcut(_ index: Int) -> String {
+        guard let action = ShortcutAction.allCases.first(where: { $0.slotIndex == index }) else {
+            return ""
+        }
+        return shortcuts[action].displayString
+    }
+
     private var metaString: String {
         var parts: [String] = []
         if let app = item.sourceAppName { parts.append(app) }
@@ -200,7 +209,7 @@ struct HistoryRow: View {
         Divider()
         Menu("Save to Hot Slot") {
             ForEach(0..<HistoryStore.slotCount, id: \.self) { slotIndex in
-                Button("Slot \(slotIndex + 1)  (⌃⌘\(slotIndex + 1))") { onSaveToSlot(slotIndex) }
+                Button("Slot \(slotIndex + 1)  (\(slotShortcut(slotIndex)))") { onSaveToSlot(slotIndex) }
             }
         }
         Button(item.isPinned ? "Unpin" : "Pin") { onPin() }

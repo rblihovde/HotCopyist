@@ -7,6 +7,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let store: HistoryStore
     private let monitor: ClipboardMonitor
     private let panelController: PanelController
+    private let grabber: ScreenTextGrabber
 
     /// Set by the app delegate; enables the Logic capture menu item.
     weak var logicService: LogicClipService?
@@ -15,12 +16,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let pauseItem = NSMenuItem(title: "Pause Capture", action: #selector(StatusBarController.togglePause), keyEquivalent: "")
     private let autoPasteItem = NSMenuItem(title: "Enable Auto-Paste…", action: #selector(StatusBarController.enableAutoPaste), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(StatusBarController.toggleLaunchAtLogin), keyEquivalent: "")
+    /// Titles carry the live shortcut, so an edited binding shows up here.
+    private let grabItem = NSMenuItem(title: "Grab Text from Screen…", action: #selector(StatusBarController.grabScreenText), keyEquivalent: "")
+    private let captureLogicItem = NSMenuItem(title: "Capture Logic Selection", action: #selector(StatusBarController.captureFromLogic), keyEquivalent: "")
+    private var retentionItems: [NSMenuItem] = []
 
-    init(store: HistoryStore, monitor: ClipboardMonitor, panelController: PanelController) {
+    init(store: HistoryStore, monitor: ClipboardMonitor, panelController: PanelController,
+         grabber: ScreenTextGrabber) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.store = store
         self.monitor = monitor
         self.panelController = panelController
+        self.grabber = grabber
         super.init()
 
         statusItem.button?.image = NSImage(
@@ -38,7 +45,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let captureLogicItem = NSMenuItem(title: "Capture Logic Selection  (⌃⌘C)", action: #selector(captureFromLogic), keyEquivalent: "")
+        grabItem.target = self
+        menu.addItem(grabItem)
+
         captureLogicItem.target = self
         menu.addItem(captureLogicItem)
 
@@ -48,7 +57,25 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         clearItem.target = self
         menu.addItem(clearItem)
 
+        // Retention: unpinned clips can age out on their own, which matters
+        // when the day's copying was done on someone else's machine.
+        let retentionMenu = NSMenu()
+        for option in HistoryStore.Retention.allCases {
+            let item = NSMenuItem(title: option.title, action: #selector(setRetention(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = option.rawValue
+            retentionMenu.addItem(item)
+            retentionItems.append(item)
+        }
+        let retentionParent = NSMenuItem(title: "Auto-Delete History", action: nil, keyEquivalent: "")
+        retentionParent.submenu = retentionMenu
+        menu.addItem(retentionParent)
+
         menu.addItem(.separator())
+
+        let shortcutsItem = NSMenuItem(title: "Keyboard Shortcuts…", action: #selector(showShortcuts), keyEquivalent: "")
+        shortcutsItem.target = self
+        menu.addItem(shortcutsItem)
 
         autoPasteItem.target = self
         menu.addItem(autoPasteItem)
@@ -69,7 +96,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        toggleItem.title = panelController.isVisible ? "Hide HotCopyist  (⌃⌘V)" : "Show HotCopyist  (⌃⌘V)"
+        let shortcuts = ShortcutStore.shared
+        let toggleKey = shortcuts[.togglePanel].displayString
+        toggleItem.title = (panelController.isVisible ? "Hide HotCopyist  (" : "Show HotCopyist  (") + toggleKey + ")"
+        grabItem.title = "Grab Text from Screen…  (\(shortcuts[.grabScreenText].displayString))"
+        captureLogicItem.title = "Capture Logic Selection  (\(shortcuts[.captureLogic].displayString))"
+        for item in retentionItems {
+            item.state = item.tag == store.retention.rawValue ? .on : .off
+        }
         pauseItem.state = monitor.isPaused ? .on : .off
         autoPasteItem.title = Paster.isTrusted ? "Auto-Paste Enabled" : "Enable Auto-Paste…"
         autoPasteItem.state = Paster.isTrusted ? .on : .off
@@ -84,6 +118,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func togglePause() {
         monitor.isPaused.toggle()
+    }
+
+    @objc private func grabScreenText() {
+        grabber.begin()
+    }
+
+    @objc private func showShortcuts() {
+        ShortcutsWindowController.shared.show()
+    }
+
+    @objc private func setRetention(_ sender: NSMenuItem) {
+        guard let option = HistoryStore.Retention(rawValue: sender.tag) else { return }
+        store.retention = option
     }
 
     @objc private func captureFromLogic() {

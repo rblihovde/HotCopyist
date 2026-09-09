@@ -6,6 +6,8 @@ struct PanelRootView: View {
     @ObservedObject var controller: PanelController
     @EnvironmentObject private var store: HistoryStore
     @EnvironmentObject private var monitor: ClipboardMonitor
+    @EnvironmentObject private var grabber: ScreenTextGrabber
+    @ObservedObject private var shortcuts = ShortcutStore.shared
 
     @State private var searchText = ""
     @State private var selectedID: UUID?
@@ -220,11 +222,36 @@ struct PanelRootView: View {
                 .buttonStyle(.plain)
                 .help("Expand panel")
 
+                screenGrabButton
+
                 pinButton
             }
         }
         .padding(.horizontal, 10)
         .frame(maxHeight: .infinity)
+    }
+
+    /// Dashed-lasso-with-eyeballs button: drag a box anywhere on screen and the
+    /// text inside it is read onto the clipboard.
+    private var screenGrabButton: some View {
+        Button {
+            grabber.begin()
+        } label: {
+            ZStack {
+                Image(systemName: "rectangle.dashed")
+                    .font(.system(size: 15, weight: .light))
+                Text("\u{1F440}")
+                    .font(.system(size: 7))
+                    .offset(y: 0.5)
+            }
+            .foregroundStyle(grabber.isSelecting ? Theme.mint : Theme.textSecondary)
+            .frame(width: 19, height: 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(grabber.isSelecting
+              ? "Cancel screen grab"
+              : "Grab text from the screen (\(shortcuts[.grabScreenText].displayString)) \u{2014} drag a box, the text is copied")
     }
 
     private var pinButton: some View {
@@ -259,6 +286,8 @@ struct PanelRootView: View {
 
             Spacer()
 
+            screenGrabButton
+
             pinButton
 
             Button {
@@ -291,6 +320,18 @@ struct PanelRootView: View {
                     inspecting = nil
                     showToast("Everything cleared")
                 }
+                Divider()
+                Menu("Auto-Delete History") {
+                    ForEach(HistoryStore.Retention.allCases) { option in
+                        Button {
+                            store.retention = option
+                            showToast(option == .off ? "Auto-delete off" : option.title)
+                        } label: {
+                            Text(store.retention == option ? "✓ \(option.title)" : option.title)
+                        }
+                    }
+                }
+                Button("Keyboard Shortcuts…") { ShortcutsWindowController.shared.show() }
                 Divider()
                 if !Paster.isTrusted {
                     Button("Enable Auto-Paste (Accessibility)…") {
@@ -478,7 +519,7 @@ struct PanelRootView: View {
             HStack {
                 Text("\(store.items.count) items")
                 Spacer()
-                Text("⌃⌘V to show or hide")
+                Text("\(shortcuts[.togglePanel].displayString) to show or hide")
             }
             .font(Theme.monoSmall)
             .foregroundStyle(Theme.textSecondary)
@@ -623,8 +664,9 @@ struct PanelRootView: View {
         if paste {
             if Paster.isTrusted {
                 showToast("Pasting…")
+                let target = NSWorkspace.shared.frontmostApplication?.processIdentifier
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                    Paster.sendCmdV()
+                    Paster.sendCmdV(ifFrontmostIs: target)
                 }
             } else {
                 showToast("Accessibility permission needed")
